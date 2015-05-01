@@ -30,7 +30,6 @@ print Crafting['Recipes']['craft stone_pickaxe at bench']
 
 #Container Class to hold comipled recipes
 
-
 from collections import namedtuple
 Recipe = namedtuple('Recipe',['name','check','effect','cost'])
 all_recipes = []
@@ -84,6 +83,7 @@ def t_is_goal(state):
 
 def t_heuristic(state):
     return 0
+
 print search(t_graph, t_initial, t_is_goal, t_limit, t_heuristic)
 
 #Building Blocks State
@@ -132,11 +132,13 @@ Items = Crafting['Items']
 
 def inventory_to_tuple(d):
     return tuple(d.get(name,0) for i,name in enumerate(Items))
+
 h = inventory_to_tuple(state_dict) # >(0,0,0,0,5,0,0,0)
 
 def inventory_to_set(d):
     return frozenset(d.items()
 
 h = inventory_to_frozenset(state_dict) # > frozenset({('coal':5)})
+
 dist[h] = 6
     No error
