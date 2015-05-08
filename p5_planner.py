@@ -6,22 +6,18 @@ def make_checker(rule, items):
     consumes = ()
     requirements = ()
 
-    if rule.get('Consumes') != None:
-        consumes = ruleToTuple(rule['Consumes'], items)
+    if rule.get("Consumes") != None:
+        consumes = itemsToTuple(rule["Consumes"], items)
 
-    if rule.get('Requires') != None:
-        requirements = ruleToTuple(rule['Requires'], items)
+    if rule.get("Requires") != None:
+        requirements = itemsToTuple(rule["Requires"], items)
 
     def check(state):
-        if requirements != () and state != ():
-            for i, amount in enumerate(requirements):
-                if state[i] < amount:
-                    return False
+        if contains(state, requirements) == False:
+            return False
 
-        if consumes != () and state != ():
-            for i, amount in enumerate(consumes):
-                if state[i] < amount:
-                    return False
+        if contains(state, consumes) == False:
+            return False
 
         return True
 
@@ -31,180 +27,229 @@ def make_effector(rule, items):
     consumes = ()
     produces = ()
 
-    if rule.get('Consumes') != None:
-        consumes = ruleToTuple(rule['Consumes'], items)
+    if rule.get("Consumes") != None:
+        consumes = itemsToTuple(rule["Consumes"], items)
 
-    if rule.get('Produces') != None:
-        produces = ruleToTuple(rule['Produces'], items)
+    if rule.get("Produces") != None:
+        produces = itemsToTuple(rule["Produces"], items)
 
     def effect(state):
         nextState = state;
 
         if consumes != () and nextState != ():
-            nextState = tuple(nextState[i] - amount for i, amount in enumerate(consumes))
+            nextState = combineTuple(nextState, consumes, "sub")
 
         if produces != () and nextState != ():
-            nextState = tuple(nextState[i] + amount for i, amount in enumerate(produces))
+            nextState = combineTuple(nextState, produces, "add")
 
         return nextState
 
     return effect
 
-def heuristic(node, nextNode, goal):
-    # wooden_pickaxe: 1 took 0.147 seconds
-    # stone_pickaxe: 1 took 0.229 seconds
-    # furnace: 1 took 0.283 seconds
-    # iron_pickaxe: 1 took 16.551 seconds
-    # cart: 1 took  seconds 17.623
-    # cart: 1, rail: 10 took 19.787 seconds
-    # cart: 1, rail: 20 took 22.343 seconds
-    # ingot: 1 took 2.261 seconds
-    # rail: 1 took 17.814 seconds
-
+def heuristic(node, nextNode, bases):
     cost = 0
 
-    for i in xrange(len(node[1])):
-        # something new could've been crafted
-        if node[1][i] >= nextNode[1][i] and node[1][i] != 0 and nextNode[1][i] != 0:
-           cost += 10
+    if nextNode != () and bases != ():
+        for i, amount in enumerate(bases):
+            if nextNode[i] >= amount:
+                cost += 1000
 
-        # something we didn't have was crafted
-        if node[1][i] == 0 and nextNode[1][i] > 0:
-           cost -= 10
+    for i in xrange(len(node)):
+        if node[i] >= nextNode[i] and node[i] != 0 and nextNode[i] != 0:
+            cost -= 1
 
-    # more than one tool not needed
-    if nextNode[1][0] > 1 or nextNode[1][4] > 1 or nextNode[1][6] > 1 or nextNode[1][7] > 1 or nextNode[1][12] > 1 or nextNode[1][13] > 1 or nextNode[1][15] > 1 or nextNode[1][16] > 1:
+    # bench
+    if nextNode[0] > 1:
         cost += float("inf")
 
-    # replace this with something that analyzes
-    # goal and produces a limit on consumables
+    # furnace
+    if nextNode[4] > 1:
+        cost += float("inf")
+
+    # iron_axe
+    if nextNode[6] > 1:
+        cost += float("inf")
+
+    # iron_pickaxe
+    if nextNode[7] > 1:
+        cost += float("inf")
+
+    # stone_axe
+    if nextNode[12] > 1:
+        cost += float("inf")
+
+    # stone_pickaxe
+    if nextNode[13] > 1:
+        cost += float("inf")
+
+    # wooden_axe
+    if nextNode[15] > 1:
+        cost += float("inf")
+
+    # wooden_pickaxe
+    if nextNode[16] > 1:
+        cost += float("inf")
 
     # coal
-    if nextNode[1][2] > 8:
+    if nextNode[2] > 1:
         cost += float("inf")
 
     # cobble
-    elif nextNode[1][3] > 8:
+    if nextNode[3] > 8:
         cost += float("inf")
 
     # ingot
-    elif nextNode[1][5] > 17:
+    if nextNode[5] > 6:
         cost += float("inf")
 
     # ore
-    elif nextNode[1][8] > 8:
+    if nextNode[8] > 1:
         cost += float("inf")
 
     # plank
-    elif nextNode[1][9] > 4:
-        cost += float("inf")
+    if nextNode[9] > 4:
+        cost += 1
 
     # stick
-    elif nextNode[1][11] > 8:
-        cost += float("inf")
+    if nextNode[11] > 8:
+       cost += float("inf")
 
     # wood
-    elif nextNode[1][14] > 8:
+    if nextNode[14] > 1:
         cost += float("inf")
 
     return cost
-
-def reachedGoal(state, goals):
-    satisfied = False
-
-    for i, amount in enumerate(goals):
-        if state[i] >= amount and amount != 0:
-            satisfied = True
-        elif state[i] <= amount and amount != 0:
-            satisfied = False
-            break
-
-    return satisfied
 
 def graph(state, recipes):
     adjacent = []
 
     for recipe in recipes:
-        if recipe.check(state[1]):
-            adjacent.append((recipe.cost, recipe.effect(state[1]), recipe.name))
+        if recipe.check(state):
+            adjacent.append((recipe.cost, recipe.effect(state), recipe.name))
 
     return adjacent
 
 
-def plan(graph, state, items, goals, recipes):
+def plan(graph, state, items, goals, recipes, bases):
     dist = {}
     prev = {}
-    initial = inventoryToTuple(state, items)
-    goal = inventoryToTuple(goals, items)
+    name = {}
+    initial = itemsToTuple(state, items)
+    goal = itemsToTuple(goals, items)
     dist[initial] = 0
     prev[initial] = None
-    heap = [(dist[initial], initial, "initial")]
+    name[initial] = "initial"
+    heap = [(dist[initial], initial, name[initial])]
 
     while heap:
         node = heappop(heap)
-        print(node)
 
-        if reachedGoal(node[1], goal):
+        if contains(node[1], goal):
             break
 
-        for nextNode in graph(node, recipes):
-            if nextNode[1] not in dist or nextNode[0] < dist[nextNode[1]]:
-                dist[nextNode[1]] = nextNode[0]
+        for nextNode in graph(node[1], recipes):
+            distance = nextNode[0] + dist[node[1]]
+
+            if nextNode[1] not in dist or distance < dist[nextNode[1]]:
+                dist[nextNode[1]] = distance
                 prev[nextNode[1]] = node[1]
-                cost = nextNode[0] + dist[node[1]] + heuristic(node, nextNode, goal)
+                name[nextNode[1]] = nextNode[2]
+                cost = dist[nextNode[1]] + heuristic(node[1], nextNode[1], bases)
                 heappush(heap, (cost, nextNode[1], nextNode[2]))
 
     path = []
 
-    if reachedGoal(node[1], goal):
+    if contains(node[1], goal):
         node = node[1]
 
         while node:
-            path.append(node)
+            path.append((name[node], dist[node]))
             node = prev[node]
 
         path.reverse()
 
-    print(str(len(path) - 1))
+    for i in xrange(len(path)):
+        print(path[i])
 
-def ruleToTuple(rules, items):
-    rule = []
+    print("Length: " + str(len(path) - 1))
 
-    for i, name in enumerate(items):
-        rule.append(rules.get(name, 0))
-
-        if rules.get(name, 0) == True:
-            rule[i] = 1
-
-    return tuple(rule)
-
-def inventoryToTuple(inventory, items):
-    return tuple(inventory.get(name, 0) for i, name in enumerate(items))
+def itemsToTuple(inventory, items):
+    return tuple(int(inventory.get(name, 0)) for i, name in enumerate(items))
 
 def make_recipes(recipes, items):
-    Recipe = namedtuple('Recipe', ['name', 'check', 'effect', 'cost'])
+    Recipe = namedtuple("Recipe", ["name", "check", "effect", "cost"])
     allRecipes = []
 
     for name, rule in recipes.items():
         checker = make_checker(rule, items)
         effector = make_effector(rule, items)
-        recipe = Recipe(name, checker, effector, rule['Time'])
+        recipe = Recipe(name, checker, effector, rule["Time"])
         allRecipes.append(recipe)
 
     return allRecipes
 
+def contains(have, want):
+    if have != () and want != ():
+        for i, amount in enumerate(want):
+            if have[i] < amount:
+                return False
+
+    return True
+
+def combineTuple(firstTuple, secondTuple, operator):
+    if operator == "add":
+        return tuple(firstTuple[i] + amount for i, amount in enumerate(secondTuple))
+    elif operator == "sub":
+        return tuple(firstTuple[i] - amount for i, amount in enumerate(secondTuple))
+
+def findBase(state, goals, recipes, items, iterations):
+    goalList = []
+
+    for i, name in enumerate(goals):
+        goalList.append(name)
+
+    consumes = tuple(0 for i in xrange(len(state)))
+
+    depth = 0
+
+    while goalList and depth < iterations:
+        currentGoal = goalList.pop()
+
+        for index, name in enumerate(recipes):
+            if recipes[name]["Produces"].get(currentGoal) != None:
+                if recipes[name].get("Consumes") != None:
+                    requirements = itemsToTuple(recipes[name]["Consumes"], items)
+                    consumes = combineTuple(consumes, requirements, "add")
+
+                    for i, item in enumerate(recipes[name]["Consumes"]):
+                        goalList.append(item)
+
+                if recipes[name].get("Requires") != None:
+                    requirements = itemsToTuple(recipes[name]["Requires"], items)
+                    consumes = combineTuple(consumes, requirements, "add")
+
+                    for i, item in enumerate(recipes[name]["Requires"]):
+                        goalList.append(item)
+
+        depth += 1
+
+    return consumes
+
+
 def planner(inputFile):
-    with open('Crafting.json') as f:
+    with open(inputFile) as f:
         Crafting = json.load(f)
 
-    inventory = Crafting['Initial']
-    items = Crafting['Items']
-    goals = Crafting['Goal']
-    recipes = make_recipes(Crafting['Recipes'], items)
+    inventory = Crafting["Initial"]
+    items = Crafting["Items"]
+    goals = Crafting["Goal"]
+    recipes = make_recipes(Crafting["Recipes"], items)
+    bases = findBase(itemsToTuple(inventory, items), goals, Crafting["Recipes"], items, 5)
+    print(bases)
 
-    plan(graph, inventory, items, goals, recipes)
+    plan(graph, inventory, items, goals, recipes, bases)
 
-if __name__ ==  '__main__':
+if __name__ ==  "__main__":
     import sys
     _, filename  = sys.argv
     planner(filename)
